@@ -82,14 +82,28 @@ class PersonDetect:
         Pre-process the input image to perform resize, transform and reshape as required
         '''
         p_frame = self.preprocess_input(image)
+        
         '''
-        Perform synchronous inference
+        Uncomment the below lines and comment out the async inference part
+        for performing synchronous inference        
         '''
-        outputs = self.exec_net.infer({self.input_name: p_frame})
+        # outputs = self.exec_net.infer({self.input_name: p_frame})
+        # coords, image = self.preprocess_outputs(outputs[self.output_name], image, color, self.threshold)
+        
         '''
+        Perform async inference
+        '''        
+        self.exec_net.start_async(request_id=0, inputs={self.input_name:p_frame})
+        while True:
+            status = self.exec_net.requests[0].wait(-1)
+            if status == 0:
+                break            
+        outputs = self.exec_net.requests[0].outputs[self.output_name]
+        
+        '''        
         Pre-process the outputs to extract and draw the bounding boxes
         '''
-        coords, image = self.preprocess_outputs(outputs[self.output_name], image, color)
+        coords, image = self.preprocess_outputs(outputs, image, color, self.threshold)
         return coords, image
     
     def draw_outputs(self, xmin, ymin, xmax, ymax, image, color, thickness):   
@@ -97,7 +111,7 @@ class PersonDetect:
         end_point = (xmax, ymax)
         cv2.rectangle(image, start_point, end_point, self.convert_color(color), thickness)
 
-    def preprocess_outputs(self, outputs, image, color):
+    def preprocess_outputs(self, outputs, image, color, threshold):
         coords = []
         box_thickness = 2
         
@@ -110,13 +124,13 @@ class PersonDetect:
         (x_min, y_min) - coordinates of the top left bounding box corner
         (x_max, y_max) - coordinates of the bottom right bounding box corner
         '''
-        for box in outputs[0][0]: 
-            conf = box[2]
-            if conf >= self.threshold:
-                xmin = int(box[3] * self.w)
-                ymin = int(box[4] * self.h)
-                xmax = int(box[5] * self.w)
-                ymax = int(box[6] * self.h)
+        for bounding_box in outputs[0][0]: 
+            confidence_threshold = bounding_box[2]
+            if confidence_threshold >= threshold:
+                xmin = int(bounding_box[3] * self.w)
+                ymin = int(bounding_box[4] * self.h)
+                xmax = int(bounding_box[5] * self.w)
+                ymax = int(bounding_box[6] * self.h)
                 self.draw_outputs(xmin, ymin, xmax, ymax, image, color, box_thickness)
                 coords.append((xmin, ymin, xmax, ymax))
         return coords, image
@@ -241,6 +255,7 @@ if __name__=='__main__':
         ----convert_color
         ----load_to_IE
         ----sync_inference
+        ----async_inference
     
     Credits:
     1) https://knowledge.udacity.com/questions/238022
